@@ -15,7 +15,7 @@ import requests
 
 import yt3
 
-CURRENT_VERSION = "1.0.6"
+CURRENT_VERSION = "1.0.7"
 GITHUB_RELEASES_LATEST_URL = (
     "https://api.github.com/repos/trjn-dev/YoutubeDownloader/releases/latest"
 )
