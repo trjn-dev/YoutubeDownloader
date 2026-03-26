@@ -15,7 +15,7 @@ import requests
 
 import yt3
 
-CURRENT_VERSION = "1.0.7"
+CURRENT_VERSION = "1.0.8"
 GITHUB_RELEASES_LATEST_URL = (
     "https://api.github.com/repos/trjn-dev/YoutubeDownloader/releases/latest"
 )
@@ -500,7 +500,9 @@ try {{
   }}
 
   # Clear PyInstaller environment variables to prevent "Failed to load Python DLL" error
-  Remove-Item -Path "Env:_MEIPASS", "Env:_MEIPASS2", "Env:PYTHONPATH", "Env:PYTHONHOME" -ErrorAction SilentlyContinue
+  foreach ($var in @('_MEIPASS', '_MEIPASS2', 'PYTHONPATH', 'PYTHONHOME', '_PYI_PROGNAME')) {{
+    [Environment]::SetEnvironmentVariable($var, $null, 'Process')
+  }}
 
   # Start the new process with the proper working directory
   Start-Process -FilePath $TargetExe -WorkingDirectory (Split-Path $TargetExe)
@@ -515,8 +517,9 @@ try {{
         # doesn't try to reuse the old process's temporary extraction directory.
         safe_env = os.environ.copy()
         # Common PyInstaller internal variables:
-        for var in ["_MEIPASS", "_MEIPASS2", "PYTHONPATH", "PYTHONHOME"]:
-            safe_env.pop(var, None)
+        for k in list(safe_env.keys()):
+            if k.upper() in ["_MEIPASS", "_MEIPASS2", "PYTHONPATH", "PYTHONHOME", "_PYI_PROGNAME"]:
+                del safe_env[k]
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen(
