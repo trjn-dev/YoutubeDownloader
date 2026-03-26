@@ -15,7 +15,7 @@ import requests
 
 import yt3
 
-CURRENT_VERSION = "1.0.9"
+CURRENT_VERSION = "1.0.10"
 GITHUB_RELEASES_LATEST_URL = (
     "https://api.github.com/repos/trjn-dev/YoutubeDownloader/releases/latest"
 )
@@ -439,7 +439,7 @@ class YtDownloaderApp(ctk.CTk):
         try:
             if getattr(sys, "frozen", False) and os.path.isfile(sys.executable):
                 self._schedule_update_apply(downloaded_exe_path=path)
-                messagebox.showinfo("Restarting", "The update has been downloaded. The application will now restart to apply changes.")
+                messagebox.showinfo("Update Ready", "The update has been downloaded. The application will now close to apply changes. Please manually reopen the app once it closes.")
                 sys.exit(0)
             else:
                 messagebox.showinfo("Update downloaded", f"Installer saved to:\n{path}")
@@ -498,28 +498,10 @@ try {{
     $s.IconLocation = (\"$TargetExe,0\")
     $s.Save()
   }}
-
-  # Clear PyInstaller environment variables to prevent "Failed to load Python DLL" error
-  foreach ($var in @('_MEIPASS', '_MEIPASS2', 'PYTHONPATH', 'PYTHONHOME', '_PYI_PROGNAME')) {{
-    [Environment]::SetEnvironmentVariable($var, $null, 'Process')
-  }}
-
-  # Start the new process with the proper working directory
-  Start-Process -FilePath $TargetExe -WorkingDirectory (Split-Path $TargetExe)
 """
 
         with open(helper_ps1, "w", encoding="utf-8") as f:
             f.write(ps1)
-
-        # Environment cleanup for PyInstaller:
-        # If we are running in a frozen (PyInstaller) environment, we should clear
-        # certain environment variables so that the child process (the new exe)
-        # doesn't try to reuse the old process's temporary extraction directory.
-        safe_env = os.environ.copy()
-        # Common PyInstaller internal variables:
-        for k in list(safe_env.keys()):
-            if k.upper() in ["_MEIPASS", "_MEIPASS2", "PYTHONPATH", "PYTHONHOME", "_PYI_PROGNAME"]:
-                del safe_env[k]
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen(
@@ -536,7 +518,6 @@ try {{
                 shortcut_path,
                 process_name,
             ],
-            env=safe_env,
             creationflags=creationflags,
         )
 
