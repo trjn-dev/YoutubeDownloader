@@ -15,7 +15,7 @@ import requests
 
 import yt3
 
-CURRENT_VERSION = "1.0.1"
+CURRENT_VERSION = "1.0.2"
 GITHUB_RELEASES_LATEST_URL = (
     "https://api.github.com/repos/trjn-dev/YoutubeDownloader/releases/latest"
 )
@@ -62,8 +62,8 @@ def _ps_escape_shortcut_str(s: str) -> str:
     return (s or "").replace("'", "''")
 
 
-def ensure_youtuber_downloader_start_menu_shortcut() -> None:
-    """Create Start Menu shortcut 'Youtuber Downloader' if missing (Windows only)."""
+def ensure_youtube_downloader_start_menu_shortcut(target_exe=None) -> None:
+    """Create/overwrite Start Menu shortcut 'Youtube Downloader' (Windows only)."""
     if sys.platform != "win32":
         return
     appdata = os.environ.get("APPDATA")
@@ -74,11 +74,14 @@ def ensure_youtuber_downloader_start_menu_shortcut() -> None:
         os.makedirs(programs, exist_ok=True)
     except OSError:
         return
-    lnk_path = os.path.join(programs, "Youtuber Downloader.lnk")
-    if os.path.isfile(lnk_path):
-        return
+    lnk_path = os.path.join(programs, "Youtube Downloader.lnk")
 
-    if getattr(sys, "frozen", False):
+    if target_exe:
+        target = target_exe
+        arguments = ""
+        workdir = os.path.dirname(target_exe)
+        icon_location = f"{target_exe},0"
+    elif getattr(sys, "frozen", False):
         target = sys.executable
         arguments = ""
         workdir = os.path.dirname(sys.executable)
@@ -93,6 +96,13 @@ def ensure_youtuber_downloader_start_menu_shortcut() -> None:
         workdir = here
         ico = os.path.join(here, "app_icon.ico")
         icon_location = f"{ico},0" if os.path.isfile(ico) else f"{target},0"
+
+    # Ensure updates override the old shortcut (same filename / path).
+    try:
+        if os.path.isfile(lnk_path):
+            os.remove(lnk_path)
+    except Exception:
+        pass
 
     ps = (
         "$ws = New-Object -ComObject WScript.Shell; "
@@ -306,12 +316,32 @@ class YtDownloaderApp(ctk.CTk):
         buttons_frame.grid(row=4, column=0, columnspan=3, padx=pad, pady=(12, 8), sticky="ew")
         buttons_frame.grid_columnconfigure(0, weight=1)
         buttons_frame.grid_columnconfigure(1, weight=1)
+        buttons_frame.grid_rowconfigure(1, weight=1)
 
-        self.video_btn = ctk.CTkButton(buttons_frame, text="Download Video (MP4)", command=lambda: self.on_download("video"))
-        self.video_btn.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        # Video Mode dropdown (default: Compatibility)
+        self.video_mode_var = ctk.StringVar(value="Compatibility")
+        video_mode_menu = ctk.CTkOptionMenu(
+            buttons_frame,
+            values=["Compatibility", "Quality"],
+            variable=self.video_mode_var,
+            command=lambda _sel: None,
+        )
+        video_mode_menu.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 6), sticky="ew")
 
-        self.audio_btn = ctk.CTkButton(buttons_frame, text="Download Audio (MP3)", command=lambda: self.on_download("audio"))
-        self.audio_btn.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        # Keep the original two download buttons (video + audio). The video mode is taken from the dropdown.
+        self.video_btn = ctk.CTkButton(
+            buttons_frame,
+            text="Download Video (MP4)",
+            command=lambda: self.on_download("video_compat" if self.video_mode_var.get() == "Compatibility" else "video_quality"),
+        )
+        self.video_btn.grid(row=1, column=0, padx=10, pady=(6, 10), sticky="ew")
+
+        self.audio_btn = ctk.CTkButton(
+            buttons_frame,
+            text="Download Audio (MP3)",
+            command=lambda: self.on_download("audio"),
+        )
+        self.audio_btn.grid(row=1, column=1, padx=10, pady=(6, 10), sticky="ew")
 
         # Status / log
         self.status_label = ctk.CTkLabel(self, text="Ready.", anchor="w")
@@ -325,9 +355,9 @@ class YtDownloaderApp(ctk.CTk):
         ffmpeg_exe_path = FFMPEG_EXE_PATH if os.path.isfile(FFMPEG_EXE_PATH) else None
         if ffmpeg_exe_path is None:
             # Without ffmpeg, audio conversion (and many video merges) may fail.
-            self._set_status("FFmpeg missing. Add ffmpeg.exe near app/script or install in PATH.", error=True)
-            self.video_btn.configure(state="disabled")
+            self._set_status("FFmpeg missing. Add ffmpeg.exe near app/script.", error=True)
             self.audio_btn.configure(state="disabled")
+            self.video_btn.configure(state="disabled")
             messagebox.showerror(
                 "FFmpeg missing",
                 "FFmpeg is required by yt-dlp post-processing (e.g., MP3 extraction/merge).\n\n"
@@ -403,20 +433,114 @@ class YtDownloaderApp(ctk.CTk):
         if err is not None:
             messagebox.showerror("Update download failed", str(err))
             return
-        messagebox.showinfo("Update downloaded", f"Installer saved to:\n{path}")
+
+        # Apply update: replace the currently-running exe in-place (same filename),
+        # and recreate the Start Menu shortcut to ensure it points at the new binary.
+        try:
+            if getattr(sys, "frozen", False) and os.path.isfile(sys.executable):
+                self._schedule_update_apply(downloaded_exe_path=path)
+                messagebox.showinfo("Updating", "Update downloaded. Applying now; the app will restart.")
+                sys.exit(0)
+            else:
+                messagebox.showinfo("Update downloaded", f"Installer saved to:\n{path}")
+        except Exception as e:
+            messagebox.showerror("Update failed", str(e))
+
+    def _schedule_update_apply(self, downloaded_exe_path: str) -> None:
+        """Replace the currently running exe with `downloaded_exe_path` (same filename) and refresh the Start Menu shortcut."""
+        target_exe_path = sys.executable
+        if not target_exe_path or not os.path.isfile(target_exe_path):
+            raise FileNotFoundError("Current executable not found; cannot apply update in-place.")
+        if not downloaded_exe_path or not os.path.isfile(downloaded_exe_path):
+            raise FileNotFoundError("Downloaded update file not found.")
+
+        process_name = os.path.splitext(os.path.basename(target_exe_path))[0]
+
+        # Start Menu shortcut path (same name as before) so it overrides the old one.
+        appdata = os.environ.get("APPDATA") or ""
+        shortcut_path = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Youtube Downloader.lnk") if appdata else ""
+
+        helper_dir = os.path.dirname(downloaded_exe_path) or os.getcwd()
+        helper_ps1 = os.path.join(helper_dir, "yt_update_apply.ps1")
+
+        # External helper is required because the current exe can't be replaced while this process is running.
+        # The helper waits for the process to stop, then replaces the file and starts the new exe.
+        ps1 = f"""param(
+  [string]$TempExe,
+  [string]$TargetExe,
+  [string]$ShortcutPath,
+  [string]$ProcessName
+)
+$ErrorActionPreference = 'Stop'
+
+$timeoutSeconds = 180
+$sw = [Diagnostics.Stopwatch]::StartNew()
+while ($sw.Elapsed.TotalSeconds -lt $timeoutSeconds) {{
+  $p = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue
+  if (-not $p) {{ break }}
+  Start-Sleep -Milliseconds 500
+}}
+
+try {{
+  Move-Item -Force $TempExe $TargetExe
+}} catch {{
+  Copy-Item -Force $TempExe $TargetExe
+  Remove-Item -Force $TempExe
+}}
+
+if ($ShortcutPath -and (Test-Path (Split-Path $ShortcutPath))) {{
+  try {{ if (Test-Path $ShortcutPath) {{ Remove-Item -Force $ShortcutPath }} }} catch {{ }}
+  $ws = New-Object -ComObject WScript.Shell
+  $s = $ws.CreateShortcut($ShortcutPath)
+  $s.TargetPath = $TargetExe
+  $s.Arguments = ''
+  $s.WorkingDirectory = (Split-Path $TargetExe)
+  $s.IconLocation = (\"$TargetExe,0\")
+  $s.Save()
+}}
+
+Start-Process -FilePath $TargetExe
+"""
+
+        with open(helper_ps1, "w", encoding="utf-8") as f:
+            f.write(ps1)
+
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Sta",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                helper_ps1,
+                downloaded_exe_path,
+                target_exe_path,
+                shortcut_path,
+                process_name,
+            ],
+            creationflags=creationflags,
+        )
 
     @staticmethod
     def _download_release_exe(url: str) -> str:
-        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
-        os.makedirs(downloads, exist_ok=True)
         parsed = urlparse(url)
         name = os.path.basename(unquote(parsed.path))
         if not name or not name.lower().endswith(".exe"):
             name = "YoutubeDownloader_update.exe"
-        dest = os.path.join(downloads, name)
-        if os.path.exists(dest):
-            base, ext = os.path.splitext(name)
-            dest = os.path.join(downloads, f"{base}_new{ext}")
+
+        # If we're running a frozen exe, download next to it as a temp file,
+        # then an external helper will replace the current exe after this app exits.
+        if getattr(sys, "frozen", False) and os.path.isfile(sys.executable):
+            target_exe = sys.executable
+            target_dir = os.path.dirname(target_exe)
+            target_name = os.path.basename(target_exe)
+            dest = os.path.join(target_dir, f"{target_name}.update_download")
+        else:
+            downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+            os.makedirs(downloads, exist_ok=True)
+            dest = os.path.join(downloads, name)
 
         with requests.get(url, stream=True, timeout=120, headers={"User-Agent": "YtDownloader-UpdateDownload"}) as r:
             r.raise_for_status()
@@ -464,8 +588,8 @@ class YtDownloaderApp(ctk.CTk):
 
         self.download_in_progress = True
         self._set_status("Downloading... (please wait)")
-        self.video_btn.configure(state="disabled")
         self.audio_btn.configure(state="disabled")
+        self.video_btn.configure(state="disabled")
 
         t = threading.Thread(target=self._download_worker, args=(clean_url, media_type), daemon=True)
         t.start()
@@ -504,15 +628,15 @@ class YtDownloaderApp(ctk.CTk):
 
     def _on_download_complete(self):
         self.download_in_progress = False
-        self.video_btn.configure(state="normal")
         self.audio_btn.configure(state="normal")
+        self.video_btn.configure(state="normal")
         self._set_status("Download finished.")
         self._append_log("\nDone.\n")
 
     def _on_download_error(self, msg: str):
         self.download_in_progress = False
-        self.video_btn.configure(state="normal")
         self.audio_btn.configure(state="normal")
+        self.video_btn.configure(state="normal")
         self._set_status("Download failed. See log.", error=True)
         self._append_log(f"\n--- Error ---\n{msg}\n")
 
@@ -538,7 +662,7 @@ class YtDownloaderApp(ctk.CTk):
 
 
 def main():
-    ensure_youtuber_downloader_start_menu_shortcut()
+    ensure_youtube_downloader_start_menu_shortcut()
     _windows_set_app_user_model_id()
     # Initialize textbox state on start.
     app = YtDownloaderApp()

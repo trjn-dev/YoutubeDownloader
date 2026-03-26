@@ -102,8 +102,20 @@ def download_media(url, media_type, ffmpeg_path=None):
                 'preferredquality': '192', # High quality MP3 bitrate
             }],
         })
+    elif media_type == 'video_compat':
+        # Baseline codec support: widely playable without needing advanced players.
+        # Force H.264 (avc1/avc3) video + AAC audio and mux into MP4.
+        print(f"\n🎬 Downloading VIDEO (Compatibility - H.264 + AAC, MP4): {url}")
+        ydl_opts.update({
+            'format': (
+                'bv*[vcodec~="avc1|avc3"][ext=mp4]+ba[acodec^=mp4a]'
+                '/bv*[vcodec~="avc1|avc3"]+ba[acodec^=mp4a]'
+            ),
+            'merge_output_format': 'mp4',
+        })
     else:
-        print(f"\n🎬 Downloading VIDEO (MP4): {url}")
+        # "Quality" (previous behavior): let yt-dlp pick best video+audio then mux to MP4.
+        print(f"\n🎬 Downloading VIDEO (Quality - best available, MP4): {url}")
         ydl_opts.update({
             'format': 'bestvideo+bestaudio/best',
             'merge_output_format': 'mp4',
@@ -147,9 +159,13 @@ if __name__ == "__main__":
             
             # Ask the user what they want to download
             choice = input("Download (V)ideo or (A)udio? [Default: V]: ").strip().lower()
-            
-            # Set media_type based on input (defaults to video if they just hit Enter)
-            media_type = 'audio' if choice == 'a' else 'video'
+
+            # Video has two modes; default to Compatibility for best playback compatibility.
+            if choice == 'a':
+                media_type = 'audio'
+            else:
+                mode = input("Video mode: (C)ompatibility [H.264 + AAC] or (Q)uality? [Default: C]: ").strip().lower()
+                media_type = 'video_quality' if mode == 'q' else 'video_compat'
             
             clean_url = raw_url.split('?si=')[0].split('&si=')[0]
             download_media(clean_url, media_type)
