@@ -1,6 +1,5 @@
 import yt_dlp
 import os
-import shutil
 import sys
 
 # ==========================================
@@ -44,18 +43,13 @@ def resource_path(relative_path):
 
 def get_ffmpeg_location():
     """
-    Return a valid ffmpeg executable path/location for yt-dlp.
-    Priority:
-    1) bundled ffmpeg.exe next to executable/script
-    2) ffmpeg found in system PATH
+    Return the bundled/local `ffmpeg.exe` path for yt-dlp.
+
+    This downloader is intended to use only the local ffmpeg (no system PATH fallback).
     """
     bundled_ffmpeg = resource_path("ffmpeg.exe")
     if os.path.isfile(bundled_ffmpeg):
         return bundled_ffmpeg
-
-    system_ffmpeg = shutil.which("ffmpeg")
-    if system_ffmpeg:
-        return system_ffmpeg
 
     return None
 
@@ -73,7 +67,12 @@ def clean_cache():
 
 def download_media(url, media_type, ffmpeg_path=None):
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-    ffmpeg_location = ffmpeg_path if (ffmpeg_path and os.path.isfile(ffmpeg_path)) else get_ffmpeg_location()
+    ffmpeg_exe_path = ffmpeg_path if (ffmpeg_path and os.path.isfile(ffmpeg_path)) else get_ffmpeg_location()
+    if not ffmpeg_exe_path:
+        # Do not let yt-dlp silently fall back to system PATH ffmpeg.
+        raise FileNotFoundError(
+            "Local ffmpeg.exe is missing. Place ffmpeg.exe next to this script/app/bundled executable."
+        )
 
     # Base options used for BOTH Video and Audio
     ydl_opts = {
@@ -87,8 +86,10 @@ def download_media(url, media_type, ffmpeg_path=None):
         'quiet': False,
         'no_warnings': True,
     }
-    if ffmpeg_location:
-        ydl_opts['ffmpeg_location'] = ffmpeg_location
+    # yt-dlp expects `ffmpeg_location` to be a directory (like --ffmpeg-location),
+    # so provide the directory containing our local ffmpeg.exe.
+    if ffmpeg_exe_path:
+        ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_exe_path)
 
     # Add specific rules based on your choice
     if media_type == 'audio':
@@ -128,13 +129,14 @@ def download_media(url, media_type, ffmpeg_path=None):
 if __name__ == "__main__":
     print("Initializing VR Downloader (Video & Audio Support)...")
 
-    ffmpeg_location = get_ffmpeg_location()
-    if ffmpeg_location is None:
+    ffmpeg_exe_path = get_ffmpeg_location()
+    if ffmpeg_exe_path is None:
         print("\n🛑 CRITICAL ERROR: FFmpeg is missing!")
         print("FFmpeg is REQUIRED to convert audio to MP3 and merge HD Video.")
-        print("Place ffmpeg.exe next to this script (or bundled app), or install FFmpeg in PATH.\n")
+        print("Place ffmpeg.exe next to this script (or bundled app).\n")
+        sys.exit(1)
     else:
-        print(f"Using FFmpeg from: {ffmpeg_location}")
+        print(f"Using local FFmpeg from: {ffmpeg_exe_path}")
     
     clean_cache()
     

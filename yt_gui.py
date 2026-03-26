@@ -322,8 +322,8 @@ class YtDownloaderApp(ctk.CTk):
         self.grid_rowconfigure(6, weight=1)
 
     def _run_startup_checks(self):
-        ffmpeg_location = FFMPEG_EXE_PATH if os.path.isfile(FFMPEG_EXE_PATH) else yt3.get_ffmpeg_location()
-        if ffmpeg_location is None:
+        ffmpeg_exe_path = FFMPEG_EXE_PATH if os.path.isfile(FFMPEG_EXE_PATH) else None
+        if ffmpeg_exe_path is None:
             # Without ffmpeg, audio conversion (and many video merges) may fail.
             self._set_status("FFmpeg missing. Add ffmpeg.exe near app/script or install in PATH.", error=True)
             self.video_btn.configure(state="disabled")
@@ -331,7 +331,7 @@ class YtDownloaderApp(ctk.CTk):
             messagebox.showerror(
                 "FFmpeg missing",
                 "FFmpeg is required by yt-dlp post-processing (e.g., MP3 extraction/merge).\n\n"
-                "Put `ffmpeg.exe` in the same folder as the script/app, or install FFmpeg in PATH,\n"
+                "Put `ffmpeg.exe` in the same folder as the script/app,\n"
                 "then restart the app.",
             )
         else:
