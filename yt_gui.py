@@ -15,7 +15,7 @@ import requests
 
 import yt3
 
-CURRENT_VERSION = "1.0.5"
+CURRENT_VERSION = "1.0.6"
 GITHUB_RELEASES_LATEST_URL = (
     "https://api.github.com/repos/trjn-dev/YoutubeDownloader/releases/latest"
 )
@@ -439,7 +439,7 @@ class YtDownloaderApp(ctk.CTk):
         try:
             if getattr(sys, "frozen", False) and os.path.isfile(sys.executable):
                 self._schedule_update_apply(downloaded_exe_path=path)
-                messagebox.showinfo("Updating", "Update downloaded. Applying now; the app will restart.")
+                messagebox.showinfo("Restarting", "The update has been downloaded. The application will now restart to apply changes.")
                 sys.exit(0)
             else:
                 messagebox.showinfo("Update downloaded", f"Installer saved to:\n{path}")
@@ -498,6 +498,9 @@ try {{
     $s.IconLocation = (\"$TargetExe,0\")
     $s.Save()
   }}
+
+  # Clear PyInstaller environment variables to prevent "Failed to load Python DLL" error
+  Remove-Item -Path "Env:_MEIPASS", "Env:_MEIPASS2", "Env:PYTHONPATH", "Env:PYTHONHOME" -ErrorAction SilentlyContinue
 
   # Start the new process with the proper working directory
   Start-Process -FilePath $TargetExe -WorkingDirectory (Split-Path $TargetExe)
