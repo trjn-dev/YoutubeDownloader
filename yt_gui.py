@@ -15,7 +15,7 @@ import requests
 
 import yt3
 
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.4"
 GITHUB_RELEASES_LATEST_URL = (
     "https://api.github.com/repos/trjn-dev/YoutubeDownloader/releases/latest"
 )
@@ -488,22 +488,32 @@ try {{
   Remove-Item -Force $TempExe
 }}
 
-if ($ShortcutPath -and (Test-Path (Split-Path $ShortcutPath))) {{
-  try {{ if (Test-Path $ShortcutPath) {{ Remove-Item -Force $ShortcutPath }} }} catch {{ }}
-  $ws = New-Object -ComObject WScript.Shell
-  $s = $ws.CreateShortcut($ShortcutPath)
-  $s.TargetPath = $TargetExe
-  $s.Arguments = ''
-  $s.WorkingDirectory = (Split-Path $TargetExe)
-  $s.IconLocation = (\"$TargetExe,0\")
-  $s.Save()
-}}
+  if ($ShortcutPath -and (Test-Path (Split-Path $ShortcutPath))) {{
+    try {{ if (Test-Path $ShortcutPath) {{ Remove-Item -Force $ShortcutPath }} }} catch {{ }}
+    $ws = New-Object -ComObject WScript.Shell
+    $s = $ws.CreateShortcut($ShortcutPath)
+    $s.TargetPath = $TargetExe
+    $s.Arguments = ''
+    $s.WorkingDirectory = (Split-Path $TargetExe)
+    $s.IconLocation = (\"$TargetExe,0\")
+    $s.Save()
+  }}
 
-Start-Process -FilePath $TargetExe
+  # Start the new process with the proper working directory
+  Start-Process -FilePath $TargetExe -WorkingDirectory (Split-Path $TargetExe)
 """
 
         with open(helper_ps1, "w", encoding="utf-8") as f:
             f.write(ps1)
+
+        # Environment cleanup for PyInstaller:
+        # If we are running in a frozen (PyInstaller) environment, we should clear
+        # certain environment variables so that the child process (the new exe)
+        # doesn't try to reuse the old process's temporary extraction directory.
+        safe_env = os.environ.copy()
+        # Common PyInstaller internal variables:
+        for var in ["_MEIPASS", "_MEIPASS2", "PYTHONPATH", "PYTHONHOME"]:
+            safe_env.pop(var, None)
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen(
@@ -520,6 +530,7 @@ Start-Process -FilePath $TargetExe
                 shortcut_path,
                 process_name,
             ],
+            env=safe_env,
             creationflags=creationflags,
         )
 
